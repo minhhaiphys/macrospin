@@ -1,10 +1,12 @@
-"""
-Demagnetization Factors for Ellipses and Cylinders
-Based on DOI:10.1088/0022-3727/38/18/001
-
-Written by Graham Rowlands
-Adapted by Colin Jermain
-"""
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Demagnetization Factors for Ellipses and Cylinders
+# Based on DOI:10.1088/0022-3727/38/18/001
+#
+# pymacrospin Python package
+# Authors: Graham Rowlands, Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
 from __future__ import division
 
@@ -14,7 +16,11 @@ import scipy.integrate as integrate
 
 
 def cylinder(length, width, height, cgs=False):
-    """Returns the demag factors of an elliptical nanopillar"""
+    """Returns the demag factors of an elliptical nanopillar
+
+    length, width, height: cylinder's geometry
+    cgs: if True, return value in CGS unit
+    """
     a = 0.5*length  # Semimajor
     b = 0.5*width   # Semiminor
     d = 0.5*height  # Semi...thickness?
@@ -48,7 +54,10 @@ def cylinder(length, width, height, cgs=False):
 
 
 def ellipsoid(length, width, height):
-    """Returns the demag factors of an ellipsoid"""
+    """Returns the demag factors of an ellipsoid
+
+    length, width, height: ellipsoid's geometry
+    """
     a = 0.5*length  # Semimajor
     b = 0.5*width   # Semiminor
     c = 0.5*height  # Semi-more-minor

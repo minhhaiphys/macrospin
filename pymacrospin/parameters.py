@@ -1,12 +1,13 @@
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # Parameter classes for dealing with units and normalization
 #
-# macrospin Python package
-# Authors: Colin Jermain
-# Copyright: 2014-2015 Cornell University
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
 #
 #>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-from macrospin import constants
+
+from pymacrospin import constants
 import numpy as np
 
 class Parameters(dict):
@@ -14,14 +15,14 @@ class Parameters(dict):
 
 
 class CgsParameters(Parameters):
-	
+
 
 	def normalize_field(self, field_name):
 		if isinstance(field_name, str):
 			value = self[field_name]
 		else:
 			value = field_name
-		return np.asarray(value, dtype=np.float32)/self['Ms']
+		return np.array(value, dtype=np.float32)/self['Ms']
 
 
 	def normalize_energy(self, energy_name):

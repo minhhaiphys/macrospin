@@ -1,6 +1,12 @@
-"""
-Functions for the free energy of a macrospin magnet
-"""
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Functions for the free energy of a macrospin magnet
+#
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 from __future__ import division
 import numpy as np
 
@@ -45,7 +51,7 @@ def cubic_anisotropy(m, c1, c2, Kc1=0, Kc2=0, Kc3=0):
 
     # Second order term
     Fc += Kc2*((mc1**2)*(mc2**2)*(mc3**2))
-    
+
     # Third order term
     Fc += Kc3*((mc1**4)*(mc2**4))
     Fc += Kc3*((mc2**4)*(mc3**4))
@@ -66,5 +72,4 @@ def shape_anisotropy(m, Ms, Nxx, Nyy, Nzz):
 
     Nxx + Nyy + Nzz = 4 pi
     """
-    return np.array([Nxx, Nyy, Nzz])*m*(Ms**2)
-
+    return np.dot([Nxx, Nyy, Nzz],m)*(Ms**2)

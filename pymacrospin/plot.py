@@ -1,3 +1,12 @@
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Plotting functions
+#
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D, proj3d
 from matplotlib.patches import FancyArrowPatch
@@ -43,7 +52,7 @@ def axes_3D(figure, mutation_scale=20, lw=1.5, arrowstyle="<|-|>", color='k', **
         ([0.,0.], [0.,0.], [-1.5,1.5]),
     ]
     for d in distances:
-        arrow = Arrow3D(*d, mutation_scale=mutation_scale, lw=lw, 
+        arrow = Arrow3D(*d, mutation_scale=mutation_scale, lw=lw,
                     arrowstyle=arrowstyle, color=color, **kwargs)
         ax.add_artist(arrow)
 

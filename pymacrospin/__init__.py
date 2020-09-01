@@ -1,6 +1,12 @@
-"""
-Includes helper functions for macrospin
-"""
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Includes helper functions for pymacrospin
+#
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 from __future__ import division
 import os
 import numpy as np
@@ -10,9 +16,9 @@ __version__ = 0.1
 
 
 def get_include():
-    import macrospin
-    return os.path.dirname(macrospin.__file__)+"/" # TODO: Eliminate +"/" hack
-    
+    import pymacrospin
+    return os.path.dirname(pymacrospin.__file__)+"/" # TODO: Eliminate +"/" hack
+
 
 def brillouin(x, J):
     """ Returns the Brillouin function evaluated at x and J """
@@ -20,15 +26,23 @@ def brillouin(x, J):
     f2 = 1/(2*J)
     return f1/np.tanh(f1*x)-f2/np.tanh(f2*x)
 
+
 def langevin(x):
     """ Returns the Langevin function evaluated at x and J """
     return np.coth(x)-1/x
 
 
+def sphere2cartesian(theta,phi):
+    """ Convert spherical coordinate angles to Cartesian coordinates """
+    xyz = [np.sin(theta)*np.cos(phi),
+            np.sin(theta)*np.sin(phi),
+            np.cos(theta)]
+    return np.array(xyz)
+
+
 def rotation_array(R_function, angles):
     """ Returns an array of rotation matrixes in correct order based on
     a rotation function and an array of angles in degrees
-
     """
     rotations = np.empty((len(angles), 3, 3))
     for i, angle in enumerate(angles):
@@ -74,4 +88,3 @@ def normalize(array):
         normals = np.linalg.norm(array, axis=1)
         normals = np.array(normals.reshape(normals.size, 1))
         return array / normals
-

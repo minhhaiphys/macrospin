@@ -3,3 +3,6 @@ dist/
 build/
 dev/.ipynb_checkpoints/
 examples/.ipynb_checkpoints/
+.DS_Store
+__pycache__/
+*.pyc

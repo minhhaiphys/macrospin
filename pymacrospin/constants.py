@@ -1,3 +1,12 @@
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Physical constants
+#
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 from __future__ import division
 import numpy as np
 

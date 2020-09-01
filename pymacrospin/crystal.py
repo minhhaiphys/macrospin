@@ -1,8 +1,14 @@
-"""
-Helper functions for dealing with crystals
-"""
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# Helper functions for dealing with crystals
+#
+# pymacrospin Python package
+# Authors: Colin Jermain, Minh-Hai Nguyen
+# Copyright: 2014-2020
+#
+#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
 import numpy as np
-from __init__ import normalize
+from pymacrospin.__init__ import normalize
 
 l = np.array([1, 0, 0])
 m = np.array([0, 1, 0])
