@@ -40,7 +40,7 @@ def cubic_anisotropy(m, c1, c2, c3, Kc1, Kc2, Kc3):
     c3: In-plane orthogonal crystal direction 3 (unit vector)
     Kc1: Cubic anisotropy energy 1 (erg/cc)
     Kc2: Cubic anisotropy energy 2 (erg/cc)
-    Kc2: Cubic anisotropy energy 3 (erg/cc)
+    Kc3: Cubic anisotropy energy 3 (erg/cc)
     """
     if dot(c1,c2) != 0:
         raise Exception("Crystal directions c1 and c2 must be orthogonal")

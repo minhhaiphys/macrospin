@@ -10,46 +10,56 @@
 import numpy as np
 import numba as nb
 
-from pymacrospin.numba.__init__ import normalize
+from pymacrospin.constants import hbar, ech, gyromagnetic_ratio
+from pymacrospin.numba.__init__ import normalize, normalize_field, normalize_energy
 from pymacrospin.numba import field, torque, solvers, energy
-from pymacrospin.parameters import CgsParameters, MksParameters, NormalizedParameters
 
 
 class Kernel:
     """ Encapsulates the time evolution algorithm for solving the
-    Landau-Liftshitz equation
+    Landau-Liftshitz-Gilbert and Slonczewski equation
 
     The following parameters can be provided:
-    unit: 'CGS' (default) or 'MKS'
-    method: ODE solver, either 1-Euler, 2-Huen, 3-RK23 (default) or 4-RK4
     dt: time step
-    m0: initial moment
     Ms: saturation magnetization
+    m0: initial moment
     damping: Gilbert damping constant
-    Hext: external field
-    Jc: current density
-    stt: torque prefactor (pre-calculated)
+
+    method: ODE solver, either 1-Euler, 2-Huen, 3-RK23 (default) or 4-RK4
+    unit: 'CGS' (default) or 'MKS' (not yet supported)
+    gyromagnetic_ratio: gyromagnetic ratio
     """
 
     def __init__(self, **parameters):
-        self.raw_parameters = {'unit': "CGS",
+        self.parameters = {'unit': "CGS",
                                 'method': "RK23",
                                 'm0': [1,0,0],
                                 'dt': 1e-12
                                 }
+        # Basic properties
         self.method = "RK23"
+        self.Ms = 1
+        self.damping = 0
+        self._Hext = np.array([0,0,0],dtype=np.float32)
+        self.hext = np.array([0,0,0],dtype=np.float32)
+        self.Jc = 0
+        self.gyromagnetic_ratio = gyromagnetic_ratio
+        # Update parameters
         self.update_params(**parameters)
-        self.reset()
+        self.reset_environment()
+        self.test_run()  # Move compiling overhead here
 
-
-    def _load(self):
-        """ Load the parameters by translate the dict to kernel attributes
-        """
-        for k,v in self.parameters.items():
-            if isinstance(v,list):
-                setattr(self,k,np.array(v,dtype=np.float32))
-            else:
-                setattr(self,k,v)
+    def Hext():
+        doc = "The Hext property: Externally applied field"
+        def fget(self):
+            return self._Hext
+        def fset(self, value):
+            self._Hext = np.array(value, dtype=np.float32)
+            self.hext = normalize_field(value, self.Ms)
+        def fdel(self):
+            del self._Hext
+        return locals()
+    Hext = property(**Hext())
 
 
     def update_params(self,**params):
@@ -57,41 +67,39 @@ class Kernel:
 
         params: keyword parameters
         """
-        self.raw_parameters.update(params)
-        if self.raw_parameters['unit'].lower()=="mks":
+        self.parameters.update(params)
+        if self.parameters['unit'].lower()=="mks":
             raise ValueError("MKS is not yet supported.")
-            new_params = MksParameters()
-        else: # defaul is CGS
-            new_params = CgsParameters()
-        new_params.update(self.raw_parameters)
-        self.raw_parameters = new_params
-        self.parameters = NormalizedParameters(self.raw_parameters)
-        self._load()
-        # Set up exec functions
+
+        # Load the parameters by translate the dict to kernel attributes
+        for k,v in self.parameters.items():
+            if isinstance(v,list):
+                setattr(self, k, np.array(v, dtype=np.float32))
+            else:
+                setattr(self, k, v)
+        # Rescale gyromagnetic ratio to Landau-Lifshitz version
+        self.gyromagnetic_ratio = self.gyromagnetic_ratio/(1.0 + self.damping**2)
+        # Rescale time in terms of (gamma Ms)^-1
+        self.time_conversion = self.gyromagnetic_ratio * self.Ms
+        self.dt = self.dt * self.time_conversion
+
+
+    def reset_environment(self):
+        """ Set up basic exec functions
+        Only include external field
+        Without anisotropy or spin-torque
+        """
         self.make_field()
         self.make_torque()
         self.make_energy()
         self.make_step()
 
 
-    def set_field(self,Hext):
-        """ Set the external field without changing other parameters
-
-        Hext: externally applied field
-        """
-        self.raw_parameters["Hext"] = Hext
-        self.parameters = NormalizedParameters(self.raw_parameters)
-        self._load()
-
-
-    def set_current(self,Jc):
-        """ Set the current density without changing other parameters
-
-        Jc: current density
-        """
-        self.raw_parameters["Jc"] = Jc
-        self.parameters = NormalizedParameters(self.raw_parameters)
-        self._load()
+    def test_run(self):
+        """ Test run 2 steps """
+        self.reset()
+        self.run(2*self.dt/self.time_conversion)
+        self.reset()
 
 
     def reset(self):
@@ -102,21 +110,189 @@ class Kernel:
 
 
     def make_field(self):
-        """ Define field function
+        """ Define function to calculate effective field
         """
-        self.field = lambda x: x
+        @nb.njit
+        def field_func(m, hext):
+            return hext
+        self.field = field_func
 
 
     def make_torque(self):
-        """ Define torque function
+        """ Define function to calculate torque
+        = Landau_Lifshitz torque
         """
-        self.torque = lambda x: x
+        field_func = self.field
+        alpha = self.damping
+        @nb.njit
+        def torque_func(m, hext, Jc):
+            heff = field_func(m, hext)
+            total_torque = torque.landau_lifshitz(m, heff, alpha)
+            return total_torque
+        self.torque = torque_func
 
 
     def make_energy(self):
-        """ Define energy function
+        """ Define function to calculate energy
+        = Zeeman energy + demagnetization energy
         """
-        self.energy = lambda x: x
+        field_func = self.field
+        Ms = self.Ms
+        @nb.njit
+        def energy_func(m, hext):
+            heff = field_func(m, hext)
+            E = -energy.zeeman(m, Ms, heff)
+            return E
+        self.energy = energy_func
+
+
+    def add_demag(self, Nd):
+        """ Add demagnetization field
+
+        Nd: Demagnetization diagonal tensor elements
+        """
+        # Change the field function to include demag field
+        current_field_func = self.field
+        @nb.njit
+        def field_func(m, hext):
+            return current_field_func(m, hext) + field.demagnetization(m, Nd)
+        self.field = field_func
+
+        # Change the torque function to include demag field
+        current_torque_func = self.torque
+        alpha = self.damping
+        @nb.njit
+        def torque_func(m, hext, Jc):
+            total_torque = current_torque_func(m, hext, Jc)
+            heff = field.demagnetization(m, Nd)
+            total_torque += torque.landau_lifshitz(m, heff, alpha)
+            return total_torque
+        self.torque = torque_func
+
+        # Change the energy function to inlcude uniaxial anisotropy
+        Ms = self.Ms
+        current_energy_func = self.energy
+        @nb.njit
+        def energy_func(m, hext):
+            return current_energy_func(m, hext) + energy.shape_anisotropy(m, Ms, Nd[0], Nd[1], Nd[2])
+        self.energy = energy_func
+        # Initialize
+        self.make_step()
+        self.test_run()
+
+
+    def add_uniaxial_anisotropy(self, u, Ku1, Ku2):
+        """ Add Uniaxial Anisotropy to the sample
+
+        u: uniaxial anisotropy unit vector
+        Ku1: Uniaxial anisotropy energy 1 (erg/cc)
+        Ku2: Uniaxial anisotropy energy 2 (erg/cc)
+        """
+        # Normalize parameters
+        u = normalize(np.array(u,dtype=np.float32))
+        Ms = self.Ms
+        hu1 = normalize_energy(Ku1, Ms)
+        hu2 = normalize_energy(Ku2, Ms)
+
+        # Change the field function to inlcude uniaxial anisotropy
+        current_field_func = self.field
+        @nb.njit
+        def field_func(m, hext):
+            return current_field_func(m, hext) + field.uniaxial_anisotropy(m, u, hu1, hu2)
+        self.field = field_func
+
+        # Change the torque function to include demag field
+        current_torque_func = self.torque
+        alpha = self.damping
+        @nb.njit
+        def torque_func(m, hext, Jc):
+            total_torque = current_torque_func(m, hext, Jc)
+            heff = field.uniaxial_anisotropy(m, u, hu1, hu2)
+            total_torque += torque.landau_lifshitz(m, heff, alpha)
+            return total_torque
+        self.torque = torque_func
+
+        # Change the energy function to inlcude uniaxial anisotropy
+        current_energy_func = self.energy
+        @nb.njit
+        def energy_func(m, hext):
+            return current_energy_func(m, hext) + energy.uniaxial_anisotropy(m, u, Ku1, Ku2)
+        self.energy = energy_func
+        # Initialize
+        self.make_step()
+        self.test_run()
+
+
+    def add_cubic_anisotropy(self, c1, c2, Kc1, Kc2, Kc3):
+        """ Add Cubic Anisotropy to the sample
+
+        c1: In-plane orthogonal crystal direction 1 (unit vector)
+        c2: In-plane orthogonal crystal direction 2 (unit vector)
+        Kc1: Cubic anisotropy energy 1 (erg/cc)
+        Kc2: Cubic anisotropy energy 2 (erg/cc)
+        Kc3: Cubic anisotropy energy 3 (erg/cc)
+        """
+        # Normalize parameters
+        c1 = normalize(np.array(c1,dtype=np.float32))
+        c2 = normalize(np.array(c2,dtype=np.float32))
+        Ms = self.Ms
+        hc1 = normalize_energy(Kc1, Ms)
+        hc2 = normalize_energy(Kc2, Ms)
+        c3 = np.cross(c1,c2)
+
+        # Change the field function to inlcude uniaxial anisotropy
+        current_field_func = self.field
+        @nb.njit
+        def field_func(m, hext):
+            return current_field_func(m, hext) + field.cubic_anisotropy(m, c1, c2, c3, hc1, hc2)
+        self.field = field_func
+
+        # Change the torque function to include demag field
+        current_torque_func = self.torque
+        alpha = self.damping
+        @nb.njit
+        def torque_func(m, hext, Jc):
+            total_torque = current_torque_func(m, hext, Jc)
+            heff = field.cubic_anisotropy(m, c1, c2, c3, hc1, hc2)
+            total_torque += torque.landau_lifshitz(m, heff, alpha)
+            return total_torque
+        self.torque = torque_func
+
+        # Change the energy function to inlcude uniaxial anisotropy
+        current_energy_func = self.energy
+        @nb.njit
+        def energy_func(m, hext):
+            return current_energy_func(m, hext) + energy.cubic_anisotropy(m, c1, c2, c3, Kc1, Kc2, Kc3)
+        self.energy = energy_func
+        # Initialize
+        self.make_step()
+        self.test_run()
+
+
+    def add_spintorque(self, mp, P, Lambda=2, epsilon=0):
+        """ Add spin torque
+
+        mp: spin polarization unit vector
+        P: polarization
+        Lambda: spin transfer efficiency, default = 2
+        epsilon: secondary spin transfer term (field-like torque), default = 0
+        """
+        alpha = self.damping
+        mp = np.array(mp,dtype=np.float32)
+        mp = normalize(mp)
+        is_FL = (epsilon != 0)
+        current_torque_func = self.torque
+        @nb.njit
+        def torque_func(m, hext, Jc):
+            total_torque = current_torque_func(m, hext, Jc)
+            total_torque += torque.slonczewski(m, mp, Jc, P, Lambda)
+            if is_FL:
+                total_torque += torque.slonczewski_fieldlike(m, mp, Jc, epsilon)
+            return total_torque
+        self.torque = torque_func
+        # Initialize
+        self.make_step()
+        self.test_run()
 
 
     def make_step(self):
@@ -194,15 +370,15 @@ class Kernel:
 
 
     def energy_surface(self, points=100):
-        """ Returns a numpy array of vectors that have a length of the
-        energy at their orientation
+        """ Returns a numpy array of energy on unit sphere
 
         points: number of points (default: 100)
         """
         points = int(points)
         theta = np.linspace(0, np.pi, num=points, dtype=np.float32)
         phi = np.linspace(-np.pi, np.pi, num=points, dtype=np.float32)
-        energies = np.zeros((points**2, 3), dtype=np.float32)
+        ms = np.zeros((points**2, 3), dtype=np.float32)
+        energies = np.zeros(points**2, dtype=np.float32)
         m = np.zeros(3)
 
         for i in range(points):
@@ -211,179 +387,38 @@ class Kernel:
                 m[1] = np.sin(theta[i])*np.sin(phi[j])
                 m[2] = np.cos(theta[i])
                 g = self.energy(m, self.hext)
-                idx = n*i + j
-                energies[idx][0] = g*m[0]
-                energies[idx][1] = g*m[1]
-                energies[idx][2] = g*m[2]
-        return energies
+                idx = points*i + j
+                ms[idx] = m
+                energies[idx] = g
+        return ms, energies
+
+
+    def torque_surface(self, points=100):
+        """ Returns a numpy array of torque vectors on unit sphere
+
+        points: number of points (default: 100)
+        """
+        points = int(points)
+        theta = np.linspace(0, np.pi, num=points, dtype=np.float32)
+        phi = np.linspace(-np.pi, np.pi, num=points, dtype=np.float32)
+        ms = np.zeros((points**2, 3), dtype=np.float32)
+        torques = np.zeros((points**2, 3), dtype=np.float32)
+        m = np.zeros(3)
+
+        for i in range(points):
+            for j in range(points):
+                m[0] = np.sin(theta[i])*np.cos(phi[j])
+                m[1] = np.sin(theta[i])*np.sin(phi[j])
+                m[2] = np.cos(theta[i])
+                t = self.torque(m, self.hext,self.Jc)
+                idx = points*i + j
+                ms[idx] = m
+                torques[idx] = t
+        return ms, torques
 
 
     @property
     def t_sec(self):
         """ Returns the simulation time in seconds
         """
-        return self.t/self.parameters['time_conversion']
-
-
-
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# Basic Kernel
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-
-class BasicKernel(Kernel):
-    """ Basic Kernel for solving the Landau-Liftshitz equation
-
-    unit: 'CGS' (default) or 'MKS'
-    method: ODE solver, either 1-Euler, 2-Huen, 3-RK23 (default) or 4-RK4
-    dt: time step
-    Ms: saturation magnetization
-    Hext: external field
-    Nd: Demagnetization diagonal tensor elements
-    m0: initial moment
-    damping: Gilbert damping constant
-    """
-    def __init__(self, **parameters):
-        self.Nd = np.array([0,0,0],dtype=np.float32)
-        self.Ms = 1
-        self.damping = 0
-        self.hext = np.array([0,0,0],dtype=np.float32)
-        self.Jc = np.array([0,0,0],dtype=np.float32)
-        self.stt = 0
-        super(BasicKernel,self).__init__(**parameters)
-        self.run(2*self.dt/self.time_conversion) # Move compiling overhead here
-        self.reset()
-
-    def make_field(self):
-        """ Define function to calculate effective field
-        = sum of applied field and demag field
-        """
-        Nd = self.Nd
-        @nb.njit
-        def field_func(m, hext):
-            return hext + field.demagnetization(m, Nd)
-        self.field = field_func
-
-
-    def make_torque(self):
-        """ Define function to calculate torque
-        = Landau_Lifshitz torque
-        """
-        field_func = self.field
-        alpha = self.damping
-        is_stt = (self.stt != 0)
-        Jc = self.Jc
-        stt = self.stt
-        @nb.njit
-        def torque_func(m, hext, Jc):
-            heff = field_func(m, hext)
-            total_torque = torque.landau_lifshitz(m, heff, alpha)
-            if is_stt:
-                total_torque += torque.slonczewski(m, Jc, stt)
-            return total_torque
-        self.torque = torque_func
-
-    def make_energy(self):
-        """ Define function to calculate energy
-        = Zeeman energy + demagnetization energy
-        """
-        field_func = self.field
-        Ms = self.Ms
-        Nxx = self.Nd[0]
-        Nyy = self.Nd[1]
-        Nzz = self.Nd[2]
-        @nb.njit
-        def energy_func(m, hext):
-            heff = field_func(m, hext)
-            return -energy.zeeman(m, Ms, heff) \
-                    + energy.shape_anisotropy(m, Ms, Nxx, Nyy, Nzz)
-        self.energy = energy_func
-
-
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# Anisotropy Kernel
-#>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-
-class AnisotropyKernel(BasicKernel):
-    """ Kernel for sample having uniaxial or cubic anisotropy
-
-    unit: 'CGS' (default) or 'MKS'
-    method: ODE solver, either 1-Euler, 2-Huen, 3-RK23 (default) or 4-RK4
-    dt: time step
-    Ms: saturation magnetization
-    Hext: external field
-    Nd: Demagnetization diagonal tensor elements
-    m0: initial moment
-    damping: Gilbert damping constant
-    """
-    def __init__(self, **parameters):
-        init_params = {
-            'Kc1': 0.0,
-            'Kc2': 0.0,
-            'Kc3': 0.0,
-            'Ku1': 0.0,
-            'Ku2': 0.0,
-        }
-        init_params.update(parameters)
-        self.u = np.array([0,0,0],dtype=np.float32)
-        self.hu1 = 0
-        self.hu2 = 0
-        self.c1 = np.array([0,0,0],dtype=np.float32)
-        self.c2 = np.array([0,0,0],dtype=np.float32)
-        self.hc1 = 0
-        self.hc2 = 0
-        super(AnisotropyKernel,self).__init__(**init_params)
-
-
-    def make_field(self):
-        """ Define function to calculate effective field
-        = sum of applied field and demag field
-        """
-        Nd = self.Nd
-        u = self.u
-        hu1 = self.hu1
-        hu2 = self.hu2
-        c1 = self.c1
-        c2 = self.c2
-        c3 = np.cross(c1,c2)
-        hc1 = self.hc1
-        hc2 = self.hc2
-        uniaxial = u[0]*u[1]*u[2] != 0
-        cubic = c1[0]*c1[1]*c1[2]*c2[0]*c2[1]*c2[2] != 0
-        @nb.njit
-        def field_func(m, hext):
-            heff = hext + field.demagnetization(m, Nd)
-            if uniaxial:
-                heff += field.uniaxial_anisotropy(m, u, hu1, hu2)
-            if cubic:
-                heff += field.cubic_anisotropy(m, c1, c2, c3, hc1, hc2)
-            return heff
-        self.field = field_func
-
-
-    def make_energy(self):
-        """ Define function to calculate energy
-        = Zeeman energy + demagnetization energy + anisotropy energies
-        """
-        field_func = self.field
-        Ms = self.Ms
-        Nxx = self.Nd[0]
-        Nyy = self.Nd[1]
-        Nzz = self.Nd[2]
-        u = self.u
-        Ku1 = self.raw_parameters["Ku1"]
-        Ku2 = self.raw_parameters["Ku2"]
-        Kc1 = self.raw_parameters["Kc1"]
-        Kc2 = self.raw_parameters["Kc2"]
-        Kc3 = self.raw_parameters["Kc3"]
-        c1 = self.c1
-        c2 = self.c2
-        c3 = np.cross(c1,c2)
-        @nb.njit
-        def energy_func(m, hext):
-            heff = field_func(m, hext)
-            return -energy.zeeman(m, Ms, heff) \
-                    + energy.shape_anisotropy(m, Ms, Nxx, Nyy, Nzz) \
-                    + energy.uniaxial_anisotropy(m, u, Ku1, Ku2) \
-                    + energy.cubic_anisotropy(m, c1, c2, c3, Kc1, Kc2, Kc3)
-        self.energy = energy_func
+        return self.t/self.time_conversion

@@ -156,7 +156,7 @@ class FieldSweep(object):
 
         for i, field in enumerate(self.fields):
             ti = self.kernel.t_sec
-            self.kernel.set_field(field)
+            self.kernel.Hext = field
             self.kernel.relax(**kwargs)
             times[i] = self.kernel.t_sec - ti
             moments[i] = self.kernel.m
@@ -164,3 +164,61 @@ class FieldSweep(object):
             return self.fields, moments, times
         else:
             return self.fields, moments
+
+
+class CurrentSweep(object):
+    """
+    """
+    def __init__(self, kernel, currents=np.array([0,0,0])):
+        self.kernel = kernel
+        self.currents = currents
+
+
+    def sweep_linear(self, start_current, end_current, points=1e3, reverse=True, **kwargs):
+        """ Sweep the applied current that go from the start_current
+        to the end_current, with the default option to also include the reverse
+
+        start_current: starting current
+        end_current: ending current
+        points: number of current points (including the start_ and end_current)
+        reverse: whether to add sweeping the reverse direction
+
+        Extra keyword params to be passed to the kernels.run function:
+        return_time: whether to return the relaxation time (default: False)
+        precision: energy's relative error for halting condition (default: 1e-3)
+        iter_time: time per iteration (default: 1e-9)
+        max_time: maximum simulation time (stopping condition) (default: 1e-7)
+        """
+        currents = np.linspace(start_current, end_current, num=int(points), dtype=np.float32)
+        if reverse:
+            currents = np.concatenate([currents,currents[::-1]],axis=0)
+        self.currents = currents
+        return self.run(**kwargs)
+
+
+    def run(self, return_time=False, **kwargs):
+        """ Runs through each current and stabilizes the moment, returning
+        the currents, stabilization time, and moment orientation
+
+        return_time: whether to return the relaxation time (default: False)
+
+        Extra keyword params to be passed to the kernels.run function:
+        precision: energy's relative error for halting condition (default: 1e-3)
+        iter_time: time per iteration (default: 1e-9)
+        max_time: maximum simulation time (stopping condition) (default: 1e-7)
+        """
+        size = self.currents.shape[0]
+        times = np.zeros((size, 1), dtype=np.float32)
+        moments = np.zeros((size, 3), dtype=np.float32)
+        self.kernel.reset()
+
+        for i, current in enumerate(self.currents):
+            ti = self.kernel.t_sec
+            self.kernel.Jc = current
+            self.kernel.stabilize(**kwargs)
+            times[i] = self.kernel.t_sec - ti
+            moments[i] = self.kernel.m
+        if return_time:
+            return self.currents, moments, times
+        else:
+            return self.currents, moments

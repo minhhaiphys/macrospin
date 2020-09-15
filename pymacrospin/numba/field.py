@@ -39,7 +39,7 @@ def uniaxial_anisotropy(m, u, hu1, hu2):
     hu2: normalized uniaxial anisotropy field (2nd order)
     """
     m_u = dot(m,u)
-    return u*(m_u*hu1) + u*(m_u*m_u*m_u*hu2)
+    return u*((m_u*hu1) + (m_u*m_u*m_u*hu2))
 
 @nb.njit(cache=True)
 def cubic_anisotropy(m, c1, c2, c3, hc1, hc2):
