@@ -34,9 +34,9 @@ def slonczewski(m, mp, Jc, P, Lambda):
     P: polarization
     Lambda: spin transfer efficiency
     """
-    Js = (hbar/ech)*Jc # Spin density
+    Js = (0.5*hbar/ech)*Jc # Spin density
     L2 = Lambda*Lambda
-    epsilon = P*L2 / ( (L2+1) + (L2-1)*dot(m,mp) )
+    epsilon = 2*P*L2 / ( (L2+1) + (L2-1)*dot(m,mp) )
     return Js*epsilon*np.cross(m,np.cross(mp,m))
 
 
