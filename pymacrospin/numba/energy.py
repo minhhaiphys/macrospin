@@ -77,4 +77,4 @@ def shape_anisotropy(m, Ms, Nxx, Nyy, Nzz):
 
     Nxx + Nyy + Nzz = 4 pi
     """
-    return dot([Nxx, Nyy, Nzz],m)*(Ms**2)
+    return dot([Nxx, Nyy, Nzz],dot(m,m))*(Ms**2)
